@@ -3,148 +3,533 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Room 666 - Haunted Hotel Shooter</title>
+    <title>Room 666: Prototype</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #1a1a1a; }
-        #info { position: absolute; top: 10px; left: 10px; color: white; font-family: Arial; }
-        canvas { display: block; }
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #000;
+            font-family: 'Courier New', monospace;
+        }
+        canvas { 
+            display: block; 
+        }
+        #ui {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: #b30000;
+            font-size: 18px;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #title-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            color: #b30000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        #title-screen h1 {
+            font-size: 72px;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px #ff0000;
+            animation: pulse 2s infinite;
+        }
+        #title-screen button {
+            background-color: #b30000;
+            color: #fff;
+            border: none;
+            padding: 15px 30px;
+            font-size: 24px;
+            cursor: pointer;
+            margin-top: 30px;
+            font-family: 'Courier New', monospace;
+        }
+        #title-screen button:hover {
+            background-color: #ff0000;
+        }
+        @keyframes pulse {
+            0% { text-shadow: 0 0 10px #ff0000; }
+            50% { text-shadow: 0 0 20px #ff0000, 0 0 30px #ff0000; }
+            100% { text-shadow: 0 0 10px #ff0000; }
+        }
+        #messages {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #b30000;
+            font-size: 18px;
+            max-width: 80%;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 8px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border-radius: 5px;
+        }
+        #debug {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: white;
+            font-size: 14px;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 5px;
+            border-radius: 5px;
+            display: none;
+        }
     </style>
 </head>
 <body>
-    <div id="info">Use WASD to move, Mouse to look, Click to shoot. Press R to reset maze.</div>
+    <div id="title-screen">
+        <h1>ROOM 666</h1>
+        <p>A Supernatural Horror Game</p>
+        <p>You are an elite paranormal investigator sent to cleanse a haunted hotel.</p>
+        <p>Reach Room 666, locate the source of the disturbance, and destroy it.</p>
+        <p><small>Controls: WASD to move, Mouse to look, Shift to run, Space to jump</small></p>
+        <button id="start-button">ENTER THE HOTEL</button>
+    </div>
+    
+    <div id="ui">
+        <div>LOCATION: HOTEL LOBBY</div>
+        <div>OBJECTIVE: FIND THE ELEVATOR TO ROOM 666</div>
+    </div>
+    
+    <div id="messages"></div>
+    
+    <div id="debug"></div>
 
-    <!-- Three.js and other libraries -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/stats.js/r17/Stats.min.js"></script>
-
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
-        // Three.js Scene Setup
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
-
-        // Lighting
-        const ambientLight = new THREE.AmbientLight(0x404040);
-        scene.add(ambientLight);
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-        directionalLight.position.set(0, 1, 0);
-        scene.add(directionalLight);
-
-        // Maze Generation (Procedural, shifts over time)
-        let maze = [];
-        const mazeSize = 10;
-        const wallHeight = 2;
-        function generateMaze() {
-            maze = [];
-            for (let x = 0; x < mazeSize; x++) {
-                maze[x] = [];
-                for (let z = 0; z < mazeSize; z++) {
-                    maze[x][z] = Math.random() > 0.3 ? 1 : 0; // 70% chance of wall
-                }
-            }
-            // Ensure start and end paths
-            maze[0][0] = 0;
-            maze[mazeSize - 1][mazeSize - 1] = 0;
-            renderMaze();
+        // Core variables
+        let scene, camera, renderer;
+        let moveForward = false;
+        let moveBackward = false;
+        let moveLeft = false;
+        let moveRight = false;
+        let canJump = false;
+        let isRunning = false;
+        
+        let prevTime = performance.now();
+        let velocity = new THREE.Vector3();
+        let direction = new THREE.Vector3();
+        
+        let gameStarted = false;
+        
+        // Message system
+        function showMessage(text) {
+            const messagesDiv = document.getElementById('messages');
+            const messageElement = document.createElement('div');
+            messageElement.className = 'message';
+            messageElement.textContent = text;
+            messagesDiv.appendChild(messageElement);
+            
+            // Remove message after 5 seconds
+            setTimeout(() => {
+                messagesDiv.removeChild(messageElement);
+            }, 5000);
         }
-
-        function renderMaze() {
-            if (scene.getObjectByName('maze')) scene.remove(scene.getObjectByName('maze'));
-            const mazeGroup = new THREE.Group();
-            mazeGroup.name = 'maze';
-            for (let x = 0; x < mazeSize; x++) {
-                for (let z = 0; z < mazeSize; z++) {
-                    if (maze[x][z] === 1) {
-                        const geometry = new THREE.BoxGeometry(1, wallHeight, 1);
-                        const material = new THREE.MeshBasicMaterial({ color: 0x808080 });
-                        const wall = new THREE.Mesh(geometry, material);
-                        wall.position.set(x - mazeSize / 2, wallHeight / 2, z - mazeSize / 2);
-                        mazeGroup.add(wall);
-                    }
-                }
-            }
-            scene.add(mazeGroup);
-        }
-
-        // Player
-        const player = { x: 0, z: 0, y: 1 };
-        camera.position.set(player.x, player.y + 1, player.z - 5);
-
-        // Enemy (Bellhop - Simple Cube for now)
-        const enemies = [];
-        function spawnEnemy() {
-            const geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-            const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-            const enemy = new THREE.Mesh(geometry, material);
-            enemy.position.set(Math.random() * mazeSize - mazeSize / 2, 0.25, Math.random() * mazeSize - mazeSize / 2);
-            enemies.push(enemy);
-            scene.add(enemy);
-        }
-        spawnEnemy();
-
-        // Weapon (Ectoplasmic Shotgun - Raycast)
-        const raycaster = new THREE.Raycaster();
-        let canShoot = true;
-        function shoot() {
-            if (!canShoot) return;
-            canShoot = false;
-            raycaster.setFromCamera(new THREE.Vector2(), camera);
-            const intersects = raycaster.intersectObjects(enemies);
-            if (intersects.length > 0) {
-                const enemy = intersects[0].object;
-                scene.remove(enemy);
-                enemies.splice(enemies.indexOf(enemy), 1);
-                spawnEnemy(); // Respawn enemy
-            }
-            setTimeout(() => canShoot = true, 500); // Cooldown
-        }
-
-        // Controls
-        const keys = {};
-        document.addEventListener('keydown', (e) => keys[e.key] = true);
-        document.addEventListener('keyup', (e) => keys[e.key] = false);
-        document.addEventListener('mousedown', () => shoot());
-        document.addEventListener('resize', () => {
+        
+        // Initialize the scene
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000000);
+            scene.fog = new THREE.FogExp2(0x000000, 0.05);
+            
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.y = 1.6; // Average eye height
+            
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+            
+            // Create controls
+            setupControls();
+            
+            // Create environment
+            createEnvironment();
+            
+            // Setup lighting
+            setupLighting();
+            
+            // Event listeners
+            window.addEventListener('resize', onWindowResize);
+            
+            // Start the animation loop
+            animate();
+        }
+        
+        // Player controls
+        function setupControls() {
+            // These will be the objects we rotate
+            const pitchObject = new THREE.Object3D();
+            pitchObject.add(camera);
+            
+            const yawObject = new THREE.Object3D();
+            yawObject.position.y = 1.6;
+            yawObject.add(pitchObject);
+            
+            scene.add(yawObject);
+            
+            // Mouse look
+            const onMouseMove = function(event) {
+                if (!gameStarted) return;
+                
+                const movementX = event.movementX || 0;
+                const movementY = event.movementY || 0;
+                
+                yawObject.rotation.y -= movementX * 0.002;
+                pitchObject.rotation.x -= movementY * 0.002;
+                
+                // Constrain the pitch
+                pitchObject.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitchObject.rotation.x));
+            };
+            
+            // Key down
+            const onKeyDown = function(event) {
+                switch (event.code) {
+                    case 'ArrowUp':
+                    case 'KeyW':
+                        moveForward = true;
+                        break;
+                    case 'ArrowLeft':
+                    case 'KeyA':
+                        moveLeft = true;
+                        break;
+                    case 'ArrowDown':
+                    case 'KeyS':
+                        moveBackward = true;
+                        break;
+                    case 'ArrowRight':
+                    case 'KeyD':
+                        moveRight = true;
+                        break;
+                    case 'Space':
+                        if (canJump === true) velocity.y += 350;
+                        canJump = false;
+                        break;
+                    case 'ShiftLeft':
+                    case 'ShiftRight':
+                        isRunning = true;
+                        break;
+                }
+            };
+            
+            // Key up
+            const onKeyUp = function(event) {
+                switch (event.code) {
+                    case 'ArrowUp':
+                    case 'KeyW':
+                        moveForward = false;
+                        break;
+                    case 'ArrowLeft':
+                    case 'KeyA':
+                        moveLeft = false;
+                        break;
+                    case 'ArrowDown':
+                    case 'KeyS':
+                        moveBackward = false;
+                        break;
+                    case 'ArrowRight':
+                    case 'KeyD':
+                        moveRight = false;
+                        break;
+                    case 'ShiftLeft':
+                    case 'ShiftRight':
+                        isRunning = false;
+                        break;
+                }
+            };
+            
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+            
+            // Collision detection
+            const raycaster = new THREE.Raycaster(new THREE.Vector3(), new THREE.Vector3(0, -1, 0), 0, 10);
+            
+            // Update movement
+            function updateMovement(delta) {
+                if (!gameStarted) return;
+                
+                // Get movement speed based on running state
+                const speed = isRunning ? 800.0 : 400.0;
+                
+                // Apply gravity
+                velocity.y -= 9.8 * 100.0 * delta; // 100.0 = mass
+                
+                // Reset the direction
+                direction.z = Number(moveForward) - Number(moveBackward);
+                direction.x = Number(moveRight) - Number(moveLeft);
+                direction.normalize(); // This ensures consistent movement in all directions
+                
+                // Apply movement
+                if (moveForward || moveBackward) velocity.z -= direction.z * speed * delta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * speed * delta;
+                
+                // Move the player
+                yawObject.translateX(velocity.x * delta);
+                yawObject.translateY(velocity.y * delta);
+                yawObject.translateZ(velocity.z * delta);
+                
+                // Collision with ground
+                if (yawObject.position.y < 1.6) {
+                    velocity.y = 0;
+                    yawObject.position.y = 1.6;
+                    canJump = true;
+                }
+                
+                // Keep player in bounds
+                const boundSize = 24;
+                yawObject.position.x = Math.max(-boundSize, Math.min(boundSize, yawObject.position.x));
+                yawObject.position.z = Math.max(-boundSize, Math.min(boundSize, yawObject.position.z));
+                
+                // Decay velocity
+                velocity.x -= velocity.x * 10.0 * delta;
+                velocity.z -= velocity.z * 10.0 * delta;
+                
+                // Update debug info
+                if (document.getElementById('debug').style.display === 'block') {
+                    document.getElementById('debug').innerHTML = 
+                        'Position: ' + 
+                        Math.round(yawObject.position.x) + ', ' + 
+                        Math.round(yawObject.position.y) + ', ' + 
+                        Math.round(yawObject.position.z);
+                }
+                
+                // Check for elevator position
+                if (yawObject.position.distanceTo(new THREE.Vector3(15, 1.6, 23)) < 2) {
+                    showMessage("You've reached the elevator to Room 666.");
+                }
+            }
+            
+            // Return the objects and functions we need
+            return {
+                getObject: function() { return yawObject; },
+                update: updateMovement
+            };
+        }
+        
+        // Create the hotel environment
+        function createEnvironment() {
+            // Floor
+            const floorGeometry = new THREE.PlaneGeometry(50, 50);
+            const floorMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x330000,
+                roughness: 0.8 
+            });
+            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.y = 0;
+            floor.receiveShadow = true;
+            scene.add(floor);
+            
+            // Ceiling
+            const ceilingGeometry = new THREE.PlaneGeometry(50, 50);
+            const ceilingMaterial = new THREE.MeshStandardMaterial({ color: 0x111111 });
+            const ceiling = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
+            ceiling.rotation.x = Math.PI / 2;
+            ceiling.position.y = 3;
+            scene.add(ceiling);
+            
+            // Walls
+            const wallMaterial = new THREE.MeshStandardMaterial({ color: 0x330000 });
+            
+            // Front wall with doorway
+            const frontWallLeft = new THREE.Mesh(
+                new THREE.BoxGeometry(20, 3, 0.2),
+                wallMaterial
+            );
+            frontWallLeft.position.set(-5, 1.5, -25);
+            scene.add(frontWallLeft);
+            
+            const frontWallRight = new THREE.Mesh(
+                new THREE.BoxGeometry(20, 3, 0.2),
+                wallMaterial
+            );
+            frontWallRight.position.set(15, 1.5, -25);
+            scene.add(frontWallRight);
+            
+            const frontWallTop = new THREE.Mesh(
+                new THREE.BoxGeometry(10, 1, 0.2),
+                wallMaterial
+            );
+            frontWallTop.position.set(5, 2.5, -25);
+            scene.add(frontWallTop);
+            
+            // Back wall
+            const backWall = new THREE.Mesh(
+                new THREE.BoxGeometry(50, 3, 0.2),
+                wallMaterial
+            );
+            backWall.position.set(0, 1.5, 25);
+            scene.add(backWall);
+            
+            // Left wall
+            const leftWall = new THREE.Mesh(
+                new THREE.BoxGeometry(0.2, 3, 50),
+                wallMaterial
+            );
+            leftWall.position.set(-25, 1.5, 0);
+            scene.add(leftWall);
+            
+            // Right wall
+            const rightWall = new THREE.Mesh(
+                new THREE.BoxGeometry(0.2, 3, 50),
+                wallMaterial
+            );
+            rightWall.position.set(25, 1.5, 0);
+            scene.add(rightWall);
+            
+            // Add some pillars for atmosphere
+            const pillarGeometry = new THREE.BoxGeometry(1, 3, 1);
+            const pillarMaterial = new THREE.MeshStandardMaterial({ color: 0x220000 });
+            
+            for (let x = -20; x <= 20; x += 10) {
+                for (let z = -20; z <= 20; z += 10) {
+                    if (Math.random() > 0.5 || (x === 0 && z === 0)) continue; // Skip some pillars
+                    const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
+                    pillar.position.set(x, 1.5, z);
+                    pillar.castShadow = true;
+                    pillar.receiveShadow = true;
+                    scene.add(pillar);
+                }
+            }
+            
+            // Hotel desk
+            const deskGeometry = new THREE.BoxGeometry(6, 1, 2);
+            const deskMaterial = new THREE.MeshStandardMaterial({ color: 0x3c0000 });
+            const desk = new THREE.Mesh(deskGeometry, deskMaterial);
+            desk.position.set(0, 0.5, 20);
+            desk.castShadow = true;
+            desk.receiveShadow = true;
+            scene.add(desk);
+            
+            // Elevator door (to Room 666)
+            const elevatorGeometry = new THREE.BoxGeometry(3, 2.5, 0.2);
+            const elevatorMaterial = new THREE.MeshStandardMaterial({ color: 0x666666 });
+            const elevatorDoor = new THREE.Mesh(elevatorGeometry, elevatorMaterial);
+            elevatorDoor.position.set(15, 1.25, 24.9);
+            scene.add(elevatorDoor);
+            
+            // Elevator sign
+            const signGeometry = new THREE.BoxGeometry(3, 0.5, 0.1);
+            const signMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+            const elevatorSign = new THREE.Mesh(signGeometry, signMaterial);
+            elevatorSign.position.set(15, 2.75, 24.8);
+            scene.add(elevatorSign);
+        }
+        
+        // Set up lighting
+        function setupLighting() {
+            // Ambient light
+            const ambientLight = new THREE.AmbientLight(0x333333, 0.5);
+            scene.add(ambientLight);
+            
+            // Main light
+            const mainLight = new THREE.PointLight(0xff6600, 1, 50);
+            mainLight.position.set(0, 2.5, 0);
+            mainLight.castShadow = true;
+            scene.add(mainLight);
+            
+            // Elevator light (red)
+            const elevatorLight = new THREE.PointLight(0xff0000, 0.5, 10);
+            elevatorLight.position.set(15, 2, 23);
+            scene.add(elevatorLight);
+            
+            // Add flickering effect to main light
+            function updateLights() {
+                if (!gameStarted) return;
+                
+                // Flicker main light
+                mainLight.intensity = 1 + Math.sin(Date.now() * 0.005) * 0.1 + Math.random() * 0.05;
+            }
+            
+            // Return the update function
+            return updateLights;
+        }
+        
+        // Handle window resize
+        function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
-        });
-
-        function movePlayer() {
-            const speed = 0.1;
-            let newX = player.x;
-            let newZ = player.z;
-            if (keys['w']) newZ += speed;
-            if (keys['s']) newZ -= speed;
-            if (keys['a']) newX -= speed;
-            if (keys['d']) newX += speed;
-            if (keys['r']) generateMaze(); // Reset maze
-
-            // Collision with walls
-            if (maze[Math.floor(newX + mazeSize / 2)] && maze[Math.floor(newX + mazeSize / 2)][Math.floor(newZ + mazeSize / 2)] === 0) {
-                player.x = newX;
-                player.z = newZ;
-            }
-            camera.position.set(player.x, player.y + 1, player.z - 5);
+            renderer.setSize(window.innerWidth, window.innerHeight);
         }
-
-        // Animate
-        const stats = new Stats();
-        stats.showPanel(0);
-        document.body.appendChild(stats.dom);
+        
+        // Start the game
+        function startGame() {
+            gameStarted = true;
+            document.getElementById('title-screen').style.display = 'none';
+            
+            // Lock pointer
+            renderer.domElement.requestPointerLock();
+            
+            // Show welcome message
+            showMessage("Welcome to the haunted hotel. Find the elevator to Room 666.");
+        }
+        
+        // Animation loop
         function animate() {
-            stats.begin();
             requestAnimationFrame(animate);
-            movePlayer();
+            
+            const time = performance.now();
+            
+            if (controls) {
+                // Calculate delta time
+                const delta = (time - prevTime) / 1000;
+                
+                // Update controls
+                controls.update(delta);
+                
+                // Update lights
+                if (updateLights) updateLights();
+            }
+            
+            // Render
             renderer.render(scene, camera);
-            stats.end();
+            
+            // Update previous time
+            prevTime = time;
         }
-
-        // Initialize
-        generateMaze();
-        animate();
+        
+        // Initialize controls
+        let controls;
+        let updateLights;
+        
+        // Start everything
+        document.getElementById('start-button').addEventListener('click', function() {
+            // Initialize the game
+            init();
+            
+            // Set up controls and get update function
+            controls = setupControls();
+            updateLights = setupLighting();
+            
+            // Start the game
+            startGame();
+        });
+        
+        // Toggle debug info with backtick key
+        document.addEventListener('keydown', function(event) {
+            if (event.code === 'Backquote') { // Backtick key
+                const debugElement = document.getElementById('debug');
+                debugElement.style.display = debugElement.style.display === 'none' ? 'block' : 'none';
+            }
+        });
     </script>
 </body>
 </html>
