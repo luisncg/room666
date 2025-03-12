@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Room 666 - Haunted Hotel Shooter</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #1a1a1a; }
+        #info { position: absolute; top: 10px; left: 10px; color: white; font-family: Arial; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <div id="info">Use WASD to move, Mouse to look, Click to shoot. Press R to reset maze.</div>
+
+    <!-- Three.js and other libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stats.js/r17/Stats.min.js"></script>
+
+    <script>
+        // Three.js Scene Setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        directionalLight.position.set(0, 1, 0);
+        scene.add(directionalLight);
+
+        // Maze Generation (Procedural, shifts over time)
+        let maze = [];
+        const mazeSize = 10;
+        const wallHeight = 2;
+        function generateMaze() {
+            maze = [];
+            for (let x = 0; x < mazeSize; x++) {
+                maze[x] = [];
+                for (let z = 0; z < mazeSize; z++) {
+                    maze[x][z] = Math.random() > 0.3 ? 1 : 0; // 70% chance of wall
+                }
+            }
+            // Ensure start and end paths
+            maze[0][0] = 0;
+            maze[mazeSize - 1][mazeSize - 1] = 0;
+            renderMaze();
+        }
+
+        function renderMaze() {
+            if (scene.getObjectByName('maze')) scene.remove(scene.getObjectByName('maze'));
+            const mazeGroup = new THREE.Group();
+            mazeGroup.name = 'maze';
+            for (let x = 0; x < mazeSize; x++) {
+                for (let z = 0; z < mazeSize; z++) {
+                    if (maze[x][z] === 1) {
+                        const geometry = new THREE.BoxGeometry(1, wallHeight, 1);
+                        const material = new THREE.MeshBasicMaterial({ color: 0x808080 });
+                        const wall = new THREE.Mesh(geometry, material);
+                        wall.position.set(x - mazeSize / 2, wallHeight / 2, z - mazeSize / 2);
+                        mazeGroup.add(wall);
+                    }
+                }
+            }
+            scene.add(mazeGroup);
+        }
+
+        // Player
+        const player = { x: 0, z: 0, y: 1 };
+        camera.position.set(player.x, player.y + 1, player.z - 5);
+
+        // Enemy (Bellhop - Simple Cube for now)
+        const enemies = [];
+        function spawnEnemy() {
+            const geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+            const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            const enemy = new THREE.Mesh(geometry, material);
+            enemy.position.set(Math.random() * mazeSize - mazeSize / 2, 0.25, Math.random() * mazeSize - mazeSize / 2);
+            enemies.push(enemy);
+            scene.add(enemy);
+        }
+        spawnEnemy();
+
+        // Weapon (Ectoplasmic Shotgun - Raycast)
+        const raycaster = new THREE.Raycaster();
+        let canShoot = true;
+        function shoot() {
+            if (!canShoot) return;
+            canShoot = false;
+            raycaster.setFromCamera(new THREE.Vector2(), camera);
+            const intersects = raycaster.intersectObjects(enemies);
+            if (intersects.length > 0) {
+                const enemy = intersects[0].object;
+                scene.remove(enemy);
+                enemies.splice(enemies.indexOf(enemy), 1);
+                spawnEnemy(); // Respawn enemy
+            }
+            setTimeout(() => canShoot = true, 500); // Cooldown
+        }
+
+        // Controls
+        const keys = {};
+        document.addEventListener('keydown', (e) => keys[e.key] = true);
+        document.addEventListener('keyup', (e) => keys[e.key] = false);
+        document.addEventListener('mousedown', () => shoot());
+        document.addEventListener('resize', () => {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+        });
+
+        function movePlayer() {
+            const speed = 0.1;
+            let newX = player.x;
+            let newZ = player.z;
+            if (keys['w']) newZ += speed;
+            if (keys['s']) newZ -= speed;
+            if (keys['a']) newX -= speed;
+            if (keys['d']) newX += speed;
+            if (keys['r']) generateMaze(); // Reset maze
+
+            // Collision with walls
+            if (maze[Math.floor(newX + mazeSize / 2)] && maze[Math.floor(newX + mazeSize / 2)][Math.floor(newZ + mazeSize / 2)] === 0) {
+                player.x = newX;
+                player.z = newZ;
+            }
+            camera.position.set(player.x, player.y + 1, player.z - 5);
+        }
+
+        // Animate
+        const stats = new Stats();
+        stats.showPanel(0);
+        document.body.appendChild(stats.dom);
+        function animate() {
+            stats.begin();
+            requestAnimationFrame(animate);
+            movePlayer();
+            renderer.render(scene, camera);
+            stats.end();
+        }
+
+        // Initialize
+        generateMaze();
+        animate();
+    </script>
+</body>
+</html>
